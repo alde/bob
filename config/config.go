@@ -29,12 +29,12 @@ type Config struct {
 }
 
 var defaultConfig = Config{
-	Version: 1,
+	Version: 2,
 	Projects: []ProjectConfig{
 		ProjectConfig{
 			ProjectType: "maven",
 			Identifier:  "pom.xml",
-			DockerImage: "maven",
+			DockerImage: "docker.io/library/maven",
 			Environment: map[string]string{
 				"_JAVA_OPTIONS": "-Duser.home=@homeDir",
 			},
@@ -44,12 +44,28 @@ var defaultConfig = Config{
 				"checkstyle": []string{"mvn", "checkstyle:check"},
 			},
 		},
+		ProjectConfig{
+			ProjectType: "node",
+			Identifier:  "package.json",
+			DockerImage: "docker.io/library/node",
+			Environment: map[string]string{},
+			Volumes:     map[string]string{},
+			Commands: map[string][]string{
+				"test":       []string{"yarn", "test"},
+				"checkstyle": []string{"yarn", "lint"},
+			},
+		},
 	},
 }
 
 // New creates a new config object
 func New() (*Config, error) {
 	cfg, err := loadDefaultConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	err = loadGlobalConfig(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -74,14 +90,13 @@ func (c *Config) GetProjectConfig() (*ProjectConfig, error) {
 
 	return nil, errors.New("no configuration found for the current project")
 }
-
-func loadLocalConfig(config *Config) error {
-	workdir, _ := os.Getwd()
-	configFile := path.Join(workdir, ".bob.yaml")
+func loadGlobalConfig(config *Config) error {
+	homedir, _ := os.UserHomeDir()
+	configFile := path.Join(homedir, ".config", "bob.yaml")
 	if _, err := os.Stat(configFile); err != nil {
-		logrus.Debug("no local config file found, using default")
 		return nil
 	}
+	logrus.Debug("found global config file, using it instead of default config")
 
 	file, err := os.Open(configFile)
 	if err != nil {
@@ -97,7 +112,30 @@ func loadLocalConfig(config *Config) error {
 	}
 
 	return nil
+}
 
+func loadLocalConfig(config *Config) error {
+	workdir, _ := os.Getwd()
+	configFile := path.Join(workdir, ".bob.yaml")
+	if _, err := os.Stat(configFile); err != nil {
+		return nil
+	}
+	logrus.Debug("found local config file, using it instead of default config")
+
+	file, err := os.Open(configFile)
+	if err != nil {
+		return err
+	}
+	content, err := ioutil.ReadAll(file)
+	if err != nil {
+		return err
+	}
+	err = yaml.Unmarshal(content, &config)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func loadDefaultConfig() (*Config, error) {
